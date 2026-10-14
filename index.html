@@ -139,16 +139,9 @@ const DEF_AVISO='Bienvenidos a IDCH · Imágenes Diagnósticas del Chocó',UL=()
 const avisoTxt=()=>!UL()?'':(U.aviso?String(U.aviso.txt||'').trim():DEF_AVISO);
 const LK={on:'Conectado',off:'Sin internet',idle:'',dup:''};
 firebase.initializeApp(CFG);db=firebase.firestore();db.settings({experimentalAutoDetectLongPolling:true});const AU=firebase.auth();
-AU.onAuthStateChanged(u=>{AUTHED=!!u;msg='';OWN=null;render(true);if(u)claimTV()});
+AU.onAuthStateChanged(u=>{AUTHED=!!u;msg='';OWN=true;render(true);if(u&&route()==='tv')pump()});
 async function login(){const p=($('#pw')||{}).value;if(!p)return;try{await AU.signInWithEmailAndPassword(STAFF,p)}catch(e){msg=e.code==='auth/network-request-failed'?'Sin internet.':'Clave incorrecta.';render(true)}}
-const logout=()=>{releaseTV();AU.signOut()};
-// Una sola TV: la TV que abre primero toma el "candado" y lo renueva cada 10 s; otra TV queda bloqueada (si la primera se apaga, la otra toma el control sola en ~40 s).
-const TVID=Math.random().toString(36).slice(2),LOCK=()=>db.doc('lock/tv');
-async function claimTV(){if(route()!=='tv'||!AUTHED)return;try{const ref=LOCK(),ok=await db.runTransaction(async x=>{const d=await x.get(ref),v=d.exists?d.data():null;
- if(!v||v.id===TVID||Date.now()-ms(v.beat)>40000){x.set(ref,{id:TVID,beat:TS()});return true}return false});
- if(ok!==OWN){OWN=ok;render(true);if(ok)pump()}}catch(e){OWN=false;render(true)}}
-function releaseTV(){if(OWN){OWN=null;try{LOCK().delete()}catch(e){}}}
-window.addEventListener('pagehide',releaseTV);
+const logout=()=>AU.signOut();
 window.addEventListener('online',()=>{link='on';render(true)});window.addEventListener('offline',()=>{link='off';render(true)});
 // ---- sonido y cola de llamados (TV) ----
 const WD=['cero','uno','dos','tres','cuatro','cinco','seis','siete','ocho','nueve'],sleep=t=>new Promise(r=>setTimeout(r,t));
@@ -162,7 +155,7 @@ function say(t,done){let e=0;const f=()=>{if(!e){e=1;done()}};setTimeout(f,9000)
 function beep(){try{ctx.resume();const t=ctx.currentTime;[880,660,880].forEach((f,k)=>{const o=ctx.createOscillator(),g=ctx.createGain(),s=t+k*.3;o.frequency.value=f;o.connect(g);g.connect(ctx.destination);g.gain.setValueAtTime(.0001,s);g.gain.exponentialRampToValueAtTime(.4,s+.03);g.gain.exponentialRampToValueAtTime(.0001,s+.27);o.start(s);o.stop(s+.3)})}catch(e){}}
 // Un llamado a la vez: timbre + voz; cada llamado se ve en pantalla mínimo 4 s y al terminar sale de la lista.
 function announce(c){const t0=Date.now();return new Promise(ok=>{const end=()=>sleep(Math.max(0,4000-(Date.now()-t0))).then(ok);if(!snd)return end();beep();setTimeout(()=>say(spk(c),end),900)})}
-function pump(){if(CUR||!CQ.length||route()!=='tv'||OWN!==true)return;CUR=CQ.shift();render(true);announce(CUR).then(()=>{CUR=null;render(true);pump()})}
+function pump(){if(CUR||!CQ.length||route()!=='tv')return;CUR=CQ.shift();render(true);announce(CUR).then(()=>{CUR=null;render(true);pump()})}
 // Detecta llamados nuevos (el contador "cn" del turno sube cada vez que se llama o se vuelve a llamar).
 function tick(live){if(route()==='tv'){T.forEach(t=>{const n=t.cn||0;if(live&&!FIRST&&t.st==='called'&&n>(SEEN[t.id]||0)&&!CQ.some(q=>q.id===t.id))CQ.push(Object.assign({},t));SEEN[t.id]=Math.max(SEEN[t.id]||0,n)});if(live)FIRST=false;pump()}render()}
 // ---- vistas ----
@@ -170,7 +163,7 @@ const head=t=>`<header class="top"><div class="row" style="margin:0">${route()?'
 const nextList=n=>{const L=wait();return L.length?`<ol class="nx">${L.slice(0,n).map(t=>`<li><span><b>${lbl(t)}</b>${t.p?'<em class="tag">Prioritario</em>':''}</span>${t.mod?`<small class="mut">→ ${MN(t.mod)}</small>`:''}</li>`).join('')}</ol>${L.length>n?`<p class="mut">y ${L.length-n} más</p>`:''}`:'<p class="mut">No hay turnos en espera.</p>'};
 const genbar=()=>{if(!sel.i)return`<p class="mut">Toca tu consultorio arriba para generar turnos para él.</p><div class="row"><button class="b pri big" disabled>Turno normal</button><button class="b big" disabled>Turno prioritario</button></div>`;return`<p class="mut" style="margin:0 0 .5rem">Generar para <b>${MN(sel.i)}</b>${dname(sel.i)?` (${esc(dname(sel.i))})`:''}:</p><div class="row"><button class="b pri big" onclick="openNew(0)">Turno normal</button><button class="b big" onclick="openNew(1)">Turno prioritario</button></div>${lastGen?`<p>Último turno generado: <b style="font-size:1.4rem">${esc(lastGen)}</b></p>`:''}`};
 const askBtn=(k,label,fn,cls)=>`<button class="b dng ${cls||''} ${armed===k?'arm':''}" onclick="ask('${k}',()=>${fn})">${armed===k?'¿Seguro? Toca de nuevo':label}</button>`;
-function vHome(){return head('Turnos')+`<div class="card"><img src="${LOGO}" alt="IDCH" style="width:150px;display:block;margin:0 auto 12px"><div class="row"><a class="b pri big" href="#consultorio">Consultorio</a><a class="b big" href="#tv">Televisión</a></div><p class="mut">Abre «Televisión» en la TV y «Consultorio» en el computador de las enfermeras. Abre primero la TV y no la cierres.</p></div>`}
+function vHome(){return head('Turnos')+`<div class="card"><img src="${LOGO}" alt="IDCH" style="width:150px;display:block;margin:0 auto 12px"><div class="row"><a class="b pri big" href="#consultorio">Consultorio</a><a class="b big" href="#tv">Televisión</a></div><p class="mut">Abre «Televisión» en los televisores de la sala (puedes abrir tantos como necesites) y «Consultorio» en los computadores del personal.</p></div>`}
 const pick=i=>{sel.i=i;ss.set('mod',i);render(true)};
 const modBtn=i=>{const a=act(i),off=PS[i]&&PS[i].off,dis=modOff(i);return`<button class="mc ${sel.i===i?'sel':''} ${a?'on':off?'off':''}" ${dis?'disabled':''} onclick="pick(${i})"><b>${MN(i)}</b><small>${esc(dname(i))||'—'}</small><span>${dis?'Inhabilitado':off?'En pausa':a?'Atiende '+lbl(a):'Libre'}</span></button>`};
 function mod(i){const a=act(i),off=PS[i]&&PS[i].off,w=wait(i);
@@ -186,7 +179,6 @@ function vCons(){if(!HAVE)return head('Consultorio')+'<p class="mut">Cargando…
 const logoC=`<img src="${LOGO}" alt="IDCH" style="width:150px;display:block;margin:0 auto 12px">`;
 const vLogin=()=>`<div class="card" style="max-width:420px;margin:8vh auto;text-align:center">${logoC}<h2 style="margin-top:0">Clave del personal</h2><input id="pw" type="password" placeholder="Clave" autocomplete="current-password" onkeydown="if(event.key==='Enter')login()">${msg?`<p class="err" role="alert">${esc(msg)}</p>`:''}<button class="b pri big" style="width:100%" onclick="login()">Entrar</button><p class="mut">Solo se pide una vez en este equipo.</p></div>`;
 function vTV(){
- if(OWN!==true)return`<div class="w"><div class="card" style="text-align:center;margin-top:12vh">${logoC}${OWN===false?'<h2>Ya hay otra TV abierta</h2><p class="mut">Solo se permite una TV a la vez. Si la otra se apaga, esta tomará el control sola.</p>':'<p class="mut">Conectando…</p>'}</div></div>`;
  const cs=calls(),c=cs[0],ACT=CUR?[CUR,...CQ]:[];
  const mods=[...Array(N)].map((_,k)=>{const i=k+1,a=act(i),off=PS[i]&&PS[i].off,dis=modOff(i);return`<div class="${dis?'dis':a?'on':off?'off':''}"><b>${MN(i)}</b><small>${esc(dname(i))}</small><span>${dis?'Inhabilitado':off?'En pausa':a?lbl(a):'Libre'}</span></div>`}).join('');
  const main=ACT.length?`<div class="cq n${ACT.length}">${ACT.map((t,j)=>`<div class="cc ${j?'':'cur'}"><small>Llamando a</small><div class="cn nm">${lbl(t)}</div><div class="cm">${MN(t.mod)}${dname(t.mod)?`<small>${esc(dname(t.mod))}</small>`:''}</div></div>`).join('')}</div>`
@@ -196,12 +188,12 @@ function vTV(){
 function render(force){const a=document.activeElement;if(!force&&a&&/INPUT|SELECT/.test(a.tagName)&&A.innerHTML)return;
  const r=route(),W=h=>`<div class="w">${h}</div>`,wait0=W('<p class="mut">Cargando…</p>');
  A.innerHTML=r==='tv'?(AUTHED===null?wait0:AUTHED?vTV():W(vLogin())):W(r==='consultorio'?(AUTHED===null?'<p class="mut">Cargando…</p>':AUTHED?vCons():vLogin()):vHome());updTK();if(r==='consultorio'&&AUTHED)voiceSel();}
-function updTK(){const e=document.getElementById('tk');if(!e)return;const t=avisoTxt(),show=route()==='tv'&&AUTHED===true&&OWN===true&&!!t;document.body.classList.toggle('hk',show);e.hidden=!show;
+function updTK(){const e=document.getElementById('tk');if(!e)return;const t=avisoTxt(),show=route()==='tv'&&AUTHED===true&&!!t;document.body.classList.toggle('hk',show);e.hidden=!show;
  if(!show){e.dataset.t='';return}if(e.dataset.t===t)return;e.dataset.t=t;e.textContent='';const sp=document.createElement('span');sp.textContent=t;sp.style.animationDuration=Math.max(14,Math.round((100+t.length*1.9)/7))+'s';e.appendChild(sp)}
-window.addEventListener('hashchange',()=>{closeNew();msg='';info='';armed=null;A.innerHTML='';if(route()==='tv')claimTV();else releaseTV();render(true)});
+window.addEventListener('hashchange',()=>{closeNew();msg='';info='';armed=null;A.innerHTML='';if(route()==='tv')pump();render(true)});
 render(true);
 db.collection('t').where('day','==',DAY).onSnapshot(x=>{T=x.docs.map(d=>{const v=d.data({serverTimestamps:'estimate'});return Object.assign({},v,{id:d.id,created:ms(v.created),called:ms(v.called)})});HAVE=true;tick(!x.metadata.fromCache)},err);
 db.collection('u').onSnapshot(x=>{U={__ok:1};x.docs.forEach(d=>{U[d.id]=d.data()});render()},err);
 db.collection('ps').onSnapshot(x=>{PS={};x.docs.forEach(d=>{PS[d.id]=d.data()});render()},err);
-setInterval(claimTV,10000);setInterval(()=>{if(day()!==DAY)location.reload()},60000);
+setInterval(()=>{if(day()!==DAY)location.reload()},60000);
 </script></body></html>
